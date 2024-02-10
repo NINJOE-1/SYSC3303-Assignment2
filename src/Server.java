@@ -1,64 +1,75 @@
-import java.io.IOException;
+/**
+ * SYSC 3303 Assignment 2
+ * Joseph Vretenar - 101234613
+ */
+
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * The type Server.
+ */
 public class Server {
-    public static void main(String[] args) throws IOException {
-        DatagramSocket socket = new DatagramSocket(69);
+    static String file = "test.txt";
+    static byte[] fileBytes = file.getBytes();
+    static String mode = "netascii";
 
-        while (true) {
-            // Receive request
-            byte[] requestData = new byte[1024];
-            DatagramPacket requestPacket = new DatagramPacket(requestData, requestData.length);
-            socket.receive(requestPacket);
+    /**
+     * The entry point of application.
+     *
+     * @param args the input arguments
+     */
+    public static void main(String[] args) {
+        try {
+            DatagramSocket socket = new DatagramSocket(69);
 
-            // Print received request packet as hexadecimal
-            System.out.print("Received request (hex): ");
-            for (int i = 0; i < requestPacket.getLength(); i++) {
-                System.out.print(String.format("%02X ", requestData[i]));
+            while (true) {
+                byte[] requestData = new byte[1024];
+                DatagramPacket requestPacket = new DatagramPacket(requestData, requestData.length);
+                socket.receive(requestPacket);
+
+                byte[] requested = requestPacket.getData();
+
+                String request = new String(requestPacket.getData(), 0, requestPacket.getLength(), StandardCharsets.UTF_8);
+                String opcode = Integer.toHexString(requested[0] & 0xFF) + " " + Integer.toHexString(requested[1] & 0xFF) + " ";
+                String output = opcode + file + " 0 " + mode + " 0";
+                System.out.println("Received request: " + output);
+
+                InetAddress clientAddress = requestPacket.getAddress();
+                int clientPort = requestPacket.getPort();
+
+                String response;
+                if (isValidRequest(requested)) {
+                    if (requested[1] == 1) {
+                        response = "0 3 0 1";
+                    } else {
+                        response = "0 4 0 0";
+                    }
+                } else {
+                    response = "Invalid request";
+                }
+
+                byte[] responseData = response.getBytes();
+                DatagramPacket responsePacket = new DatagramPacket(responseData, responseData.length, clientAddress, clientPort);
+
+                System.out.println("Sending response: " + response);
+                socket.send(responsePacket);
             }
-            System.out.println();
-
-            // Parse and validate request
-            String request = new String(requestPacket.getData(), 0, requestPacket.getLength(), StandardCharsets.UTF_8);
-            if (!isValidRequest(request)) {
-                System.err.println("Invalid request received: " + request);
-                continue; // Skip further processing for invalid request
-            }
-
-            // Formulate response
-            byte[] responseData;
-            if (request.startsWith("\0\1")) {
-                // For read requests, respond with opcode 3 followed by data
-                String filename = request.substring(2, request.indexOf('\0', 2));
-                String data = "Content of " + filename; // Example data, replace with actual file content
-                responseData = new byte[4 + data.length()];
-                responseData[0] = 0;
-                responseData[1] = 3; // Opcode for data
-                responseData[2] = 0; // Block number
-                responseData[3] = 1; // Block number (continued)
-                byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
-                System.arraycopy(dataBytes, 0, responseData, 4, dataBytes.length);
-            } else {
-                // For write requests, respond with opcode 4 (acknowledgment)
-                responseData = new byte[]{0, 4, 0, 0};
-            }
-
-            // Print response information
-            System.out.print("Sending response (hex): ");
-            for (int i = 0; i < responseData.length; i++) {
-                System.out.print(String.format("%02X ", responseData[i]));
-            }
-            System.out.println();
-
-            // Send response to intermediate host
-            DatagramPacket responsePacket = new DatagramPacket(responseData, responseData.length, requestPacket.getAddress(), requestPacket.getPort());
-            socket.send(responsePacket);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
-    private static boolean isValidRequest(String request) {
-        // Validate request format
-        return request.matches("^\\x00[\\x01\\x02].+\\x00(netascii|octet)\\x00$");
+    private static boolean isValidRequest(byte[] request) {
+        if (request[0] != 0 || (request[1] != 1 && request[1] != 2)) {
+            return false;
+        } else if (request[request.length - 1] != 0) {
+            return false;
+        } else if (request[2 + fileBytes.length] != 0) {
+            return false;
+        }else {
+            return true;
+        }
     }
 }
+
